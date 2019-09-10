@@ -1,0 +1,122 @@
+
+--------------------------------------------
+TASK50223
+https://iata.service-now.com/task.do?sys_id=18e33ec0db7f37c0fa9d174b06961964&sysparm_view=
+MIA,AGENCY MANAGEMENT ASS. MANAGER,taverasr
+Role was assigned before
+TASK50223 has been completed in SNOW.
+--------------------------------------------
+TASK50222
+https://iata.service-now.com/task.do?sys_id=77c33e40db7f37c0fa9d174b06961991&sysparm_view=
+MIA,READ ONLY,taverasr
+TASK50222 has been completed in SNOW.
+--------------------------------------------
+TASK50221
+https://iata.service-now.com/task.do?sys_id=93b3ba40db7f37c0fa9d174b069619f2&sysparm_view=
+AMM,A/L PARTICIPATION ASS. MANAGER,battistis
+TASK50221 has been completed in SNOW.
+--------------------------------------------
+TASK50090
+https://iata.service-now.com/task.do?sys_id=4e260b0bdb67bb80fa9d174b069619d9&sysparm_view=
+AMM,CS READ ONLY,huangyl
+TASK50090 has been completed in SNOW.
+--------------------------------------------
+TASK50085
+https://iata.service-now.com/task.do?sys_id=d1e54bc7db67bb80fa9d174b069619d4&sysparm_view=
+AMM,READ ONLY,kazlauskam
+TASK50085 has been completed in SNOW.
+--------------------------------------------
+TASK50084
+https://iata.service-now.com/task.do?sys_id=a7b583c7db67bb80fa9d174b06961919&sysparm_view=
+MIA,CS READ ONLY,huangyl
+TASK50084 has been completed in SNOW.
+--------------------------------------------
+TASK50083
+https://iata.service-now.com/task.do?sys_id=ecb5cf87db67bb80fa9d174b069619cd&sysparm_view=
+AMM,READ ONLY,sterzewska
+TASK50083 has been completed in SNOW.
+--------------------------------------------
+TASK50082
+https://iata.service-now.com/task.do?sys_id=6da58f87db67bb80fa9d174b069619d0&sysparm_view=
+MIA,READ ONLY,rashwank
+User has been ADDED in IRIS.
+TASK50082 has been completed in SNOW.
+--------------------------------------------
+TASK50081
+https://iata.service-now.com/task.do?sys_id=dc854387db67bb80fa9d174b06961927&sysparm_view=
+MAD,R&S ASSISTANT MANAGER,sakuraia
+TASK50081 has been completed in SNOW.
+--------------------------------------------
+TASK50080
+https://iata.service-now.com/task.do?sys_id=bb658387db67bb80fa9d174b0696196b&sysparm_view=
+MIA,READ ONLY,crabbea
+crabbea : user status is updated to ACTIVE.
+Role was assigned before
+TASK50080 has been completed in SNOW.
+
+--------------------------------------------
+TASK50078
+https://iata.service-now.com/task.do?sys_id=00554f47db67bb80fa9d174b06961945&sysparm_view=
+MIA,READ ONLY,alhilot
+alhilot : user status is updated to ACTIVE.
+TASK50078 has been completed in SNOW.
+--------------------------------------------
+TASK50077
+https://iata.service-now.com/task.do?sys_id=a835cb47db67bb80fa9d174b06961973&sysparm_view=
+AMM,CS READ ONLY,gaot
+User has been ADDED in IRIS.
+--------------------------------------------
+TASK50076
+https://iata.service-now.com/task.do?sys_id=6d254b47db67bb80fa9d174b0696195e&sysparm_view=
+MIA,READ ONLY,navarroij
+Role was assigned before
+TASK50076 has been completed in SNOW.
+--------------------------------------------
+TASK50075
+https://iata.service-now.com/task.do?sys_id=7b058747db67bb80fa9d174b06961974&sysparm_view=
+MAD,CS READ ONLY,huangyl
+User has been ADDED in IRIS.
+TASK50075 has been completed in SNOW.
+--------------------------------------------
+TASK50074
+https://iata.service-now.com/task.do?sys_id=b8058f07db67bb80fa9d174b069619fd&sysparm_view=
+MIA,AGENCY MANAGEMENT ASS. MANAGER,kretovan
+kretovan : user status is updated to ACTIVE.
+Role was assigned before
+TASK50074 has been completed in SNOW.
+--------------------------------------------
+TASK50073
+https://iata.service-now.com/task.do?sys_id=cfc48f07db67bb80fa9d174b06961925&sysparm_view=
+MAD,CS READ ONLY,gaot
+User has been ADDED in IRIS.
+TASK50073 has been completed in SNOW.
+--------------------------------------------
+TASK50072
+https://iata.service-now.com/task.do?sys_id=c7b40f07db67bb80fa9d174b069619b8&sysparm_view=
+MAD,READ ONLY,amezsr
+amezsr : user status is updated to ACTIVE.
+Role was assigned before
+TASK50072 has been completed in SNOW.
+--------------------------------------------
+TASK50071
+https://iata.service-now.com/task.do?sys_id=48848707db67bb80fa9d174b069619db&sysparm_view=
+MAD,READ ONLY,perezja
+TASK50071 has been completed in SNOW.
+--------------------------------------------
+TASK50070
+https://iata.service-now.com/task.do?sys_id=2664c307db67bb80fa9d174b069619ea&sysparm_view=
+MIA,CS READ ONLY,jaradata
+jaradata : user status is updated to ACTIVE.
+Role was assigned before
+TASK50070 has been completed in SNOW.
+--------------------------------------------
+TASK50069
+https://iata.service-now.com/task.do?sys_id=c2448fc3db67bb80fa9d174b069619b3&sysparm_view=
+MIA,READ ONLY,musayevan
+Role was assigned before
+TASK50069 has been completed in SNOW.
+--------------------------------------------
+TASK50067
+https://iata.service-now.com/task.do?sys_id=86e3c3c3db67bb80fa9d174b06961994&sysparm_view=
+MIA,CS READ ONLY,gaot
+User has been ADDED in IRIS.
