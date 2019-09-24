@@ -4,6 +4,7 @@ using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Interactions;
@@ -119,6 +120,10 @@ namespace IrisUserAutoProcessor
 
 				string userID = GetUserID(searchUserUrl, userName);
 
+				if (!VerifyUserID(userID, userName)) {
+					WriteLog(string.Format("Found UserID '{0}' does NOT match with the given UserName '{1}'.", userID, userName));
+					return false;
+				}
 				//Log user's details
 				SnowTicket ticket = new SnowTicket(ticketNumber, hub, RoleMappingDict[roleName], userID, BaseURL + ticketRelativeUrl);
 
@@ -135,8 +140,6 @@ namespace IrisUserAutoProcessor
 					_isSuccess = CreateNewUserInIRIS(ticket);
 				else _isSuccess = UpdateUser(ticket);
 
-				_logger.Flush();
-
 				//Close SNOW case
 				if (_isSuccess) CompleteUserRequestTask(ticket);
 
@@ -144,26 +147,22 @@ namespace IrisUserAutoProcessor
 			}
 			catch (Exception ex)
 			{
-				_logger.WriteLine(ex.InnerException);
-				_logger.Flush();
+				WriteLog(ex.InnerException.Message);
 				return false;
 			}
 		}
 
+		private bool VerifyUserID(string userID, string userName)
+		{
+			return userName.TrimEnd().ToLowerInvariant().Split(' ').Any(u => userID.Contains(u.ToLowerInvariant()));
+		}
+
 		private string GetUserID(string searchUserUrl, string userName)
 		{
-			string userID = string.Empty;
-			if (!UserNameIdDict.ContainsKey(userName))
-			{
-				//Search the user
-				GoToUrlWithWait(searchUserUrl, 3);
+			//Search the user
+			GoToUrlWithWait(searchUserUrl, 3);
 
-				userID = GetUserIdBySearchingInSnow();
-
-				UserNameIdDict.Add(userName, userID);
-			}
-			else userID = UserNameIdDict[userName];
-			return userID;
+			return GetUserIdBySearchingInSnow();
 		}
 
 		private string LoadUserDetails(string userID)
@@ -171,11 +170,11 @@ namespace IrisUserAutoProcessor
 			IWebElement userIDSearchBox = driver.FindElement(By.Id("Username-searchbar-7065"));
 			userIDSearchBox.SendKeys(userID);
 			driver.FindElement(By.Id("searchbar-btn-search-7064")).Click();
-			System.Threading.Thread.Sleep(2000);
+			Sleep(2);
 
 			//Check user exists or not
 			IWebElement userNameReadOnly = driver.FindElement(By.Id("Username-7065"));
-			System.Threading.Thread.Sleep(2000);
+			Sleep(2);
 			string userNameValue = userNameReadOnly.GetAttribute("value");
 			return userNameValue;
 		}
@@ -212,21 +211,14 @@ namespace IrisUserAutoProcessor
 
 		private string GetUserIdBySearchingInSnow()
 		{
-
 			//Find the found user and go to the user details page
-			IWebElement useriFrame = driver.FindElement(By.TagName("iframe"));
+			IWebElement useriFrame = driver.FindElement(By.Id("gsft_main"));
 			driver.SwitchTo().Frame(useriFrame);
 
-			var links = driver.FindElements(By.TagName("a"));
-			IWebElement userlink = driver.FindElement(By.XPath(@"//tr[contains(@class, 'list_row list_odd')]/td[3]/a"));
-			userlink.Click();
+			var userEmailEle = driver.FindElement(By.XPath(@"//section[@id='people-places_users']/section[1]/div/div[2]/address/ul/li[1]"));
+			Sleep(2);
 
-			//Get user ID
-			System.Threading.Thread.Sleep(2000);
-			IWebElement email = driver.FindElement(By.Id("sys_readonly.sys_user.user_name"));
-			string emailAdress = email.GetProperty("value");
-			string userID = StringHelper.GetFirstMatch(emailAdress, StringHelper.PATTERN_USERID);
-			return userID;
+			return StringHelper.GetFirstMatch(userEmailEle.Text, StringHelper.PATTERN_USERID);
 		}
 
 		private void GoToIrisUserModule(SnowTicket ticket)
@@ -242,7 +234,7 @@ namespace IrisUserAutoProcessor
 			IWebElement loginButton = driver.FindElement(By.Id("btnSubmit"));
 			driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(120);
 			loginButton.Click();
-			System.Threading.Thread.Sleep(3000);
+			Sleep(3);
 
 			//Go to security -> user module
 			IWebElement sideBarSecurityManagerment = driver.FindElement(By.Id("sidebar-bp-SecurityManagement"));
@@ -263,65 +255,75 @@ namespace IrisUserAutoProcessor
 		private void GoToUrlWithWait(string url, int seconds)
 		{
 			driver.Navigate().GoToUrl(url);
-			System.Threading.Thread.Sleep(seconds * 1000);
+			Sleep(seconds);
 		}
 
 		private bool UpdateUser(SnowTicket ticket)
 		{
-			SelectElement statusSelect = new SelectElement(driver.FindElement(By.XPath("//select[@id='StatusID-7114']")));
-			string status = statusSelect.SelectedOption.GetAttribute("value");
-
 			bool isSuccess = false;
-			//Inactive
-			if (status == ConfigurationManager.AppSettings["UserStatusValueInactive"])
-			{
-				isSuccess = ActivateUser(ticket, false);
-			}
-			//Locked temply
-			else if (status == ConfigurationManager.AppSettings["UserStatusValueLocked"])
-			{
-				isSuccess = ActivateUser(ticket, true);
-			}
 
-			//Active User
+			UserStatus userStatus = GetCurrentUserStatus();
+
+			isSuccess = ActivateUser(ticket, userStatus);
+			if (!isSuccess)
+				return false;
+
 			isSuccess = VerifyAndAssignRoleToUser(ticket, true);
 
 			return isSuccess;
 		}
 
-		private bool ActivateUser(SnowTicket ticket, bool isLockedTemply)
+		private UserStatus GetCurrentUserStatus()
+		{
+			SelectElement statusSelect = new SelectElement(driver.FindElement(By.XPath("//select[@id='StatusID-7114']")));
+			string status = statusSelect.SelectedOption.GetAttribute("value");
+
+			UserStatus userStatus;
+			if (status == ConfigurationManager.AppSettings["UserStatusValueInactive"])
+				userStatus = UserStatus.INACTIVE;
+			else if (status == ConfigurationManager.AppSettings["UserStatusValueLocked"])
+				userStatus = UserStatus.LOCKEDTEMPLY;
+			else userStatus = UserStatus.ACTIVE;
+
+			return userStatus;
+		}
+
+		private bool ActivateUser(SnowTicket ticket, UserStatus userStatus)
 		{
 			try
 			{
+				WriteLog(ticket.UserId + " : user status was " + Enum.GetName(typeof(UserStatus),userStatus));
+
 				IWebElement userDescTextBox = driver.FindElement(By.Id("Description-7065"));
 				userDescTextBox.SendKeys(ticket.TicketNumber);
 
-				IWebElement selectControl = driver.FindElement(By.CssSelector("#inner-content-wrapper > azur-webapp > azur-split-panel > div > azur-split-panel-section:nth-child(2) > div > azur-webapp-tabs > div > azur-users-tab > azur-one-to-one > div > div > azur-default-form > azur-form > div > div > div > form > azur-form-row:nth-child(2) > div > azur-form-column:nth-child(1) > div > azur-form-attribute:nth-child(3) > div > div > div > div > azur-form-field > div > azur-ref-field > div > div > div > azur-select-field > div > div"));
-				selectControl.Click();
-				System.Threading.Thread.Sleep(1000);
-
-				Actions action = new Actions(driver);
-				action.SendKeys(Keys.ArrowUp).Build().Perform();
-				//Move 2 steps up to select ACTIVE status
-				if (isLockedTemply)
+				if (userStatus == UserStatus.INACTIVE)
 				{
+					IWebElement selectControl = driver.FindElement(By.CssSelector("#inner-content-wrapper > azur-webapp > azur-split-panel > div > azur-split-panel-section:nth-child(2) > div > azur-webapp-tabs > div > azur-users-tab > azur-one-to-one > div > div > azur-default-form > azur-form > div > div > div > form > azur-form-row:nth-child(2) > div > azur-form-column:nth-child(1) > div > azur-form-attribute:nth-child(3) > div > div > div > div > azur-form-field > div > azur-ref-field > div > div > div > azur-select-field > div > div"));
+					selectControl.Click();
+					Sleep(1);
+
+					Actions action = new Actions(driver);
 					action.SendKeys(Keys.ArrowUp).Build().Perform();
+					//Move 2 steps up to select ACTIVE status
+					if (userStatus == UserStatus.LOCKEDTEMPLY)
+					{
+						action.SendKeys(Keys.ArrowUp).Build().Perform();
+					}
+					action.SendKeys(Keys.Enter).Build().Perform();
+					Sleep(1);
+
+					WriteLog(ticket.UserId + " : user status is updated to ACTIVE.");
 				}
-				action.SendKeys(Keys.Enter).Build().Perform();
-				System.Threading.Thread.Sleep(1000);
 
 				IWebElement saveUserButton = driver.FindElement(By.Id("btn-header-Save-7065"));
 				saveUserButton.Click();
 
-				System.Threading.Thread.Sleep(2000);
-
-				//TODO:Add log
-				_logger.WriteLine(ticket.UserId + " : user status is updated to ACTIVE.");
-				_logger.Flush();
+				Sleep(2);
 
 				return true;
 			}
-			catch (Exception ex)
+			catch (Exception)
 			{
 				return false;
 			}
@@ -333,25 +335,25 @@ namespace IrisUserAutoProcessor
 			{
 				IWebElement newUserButton = driver.FindElement(By.Id("btn-header-New-7065"));
 				newUserButton.Click();
-				System.Threading.Thread.Sleep(2000);
+				Sleep(2);
 
 				IWebElement userIdTextBox = driver.FindElement(By.Id("Username-7065"));
-				System.Threading.Thread.Sleep(1000);
+				Sleep(1);
 				userIdTextBox.SendKeys(ticket.UserId);
 
 				IWebElement userEmailTextBox = driver.FindElement(By.Id("Email-7065"));
-				System.Threading.Thread.Sleep(1000);
+				Sleep(1);
 				userEmailTextBox.SendKeys(ticket.UserId + "@iata.org");
 
 				IWebElement userDescTextBox = driver.FindElement(By.Id("Description-7065"));
-				System.Threading.Thread.Sleep(1000);
+				Sleep(1);
 				userDescTextBox.SendKeys(" " + ticket.TicketNumber);
 
 				IWebElement saveUserButton = driver.FindElement(By.Id("btn-header-Save-7065"));
 				saveUserButton.Click();
 
-				_logger.WriteLine("User has been ADDED in IRIS.");
-				System.Threading.Thread.Sleep(5000);
+				WriteLog("User has been ADDED in IRIS.");
+				Sleep(5);
 
 				//Assign role to new user
 				VerifyAndAssignRoleToUser(ticket, false);
@@ -368,7 +370,7 @@ namespace IrisUserAutoProcessor
 		{
 			//Check if role exists already, if so return directly
 			driver.FindElement(By.CssSelector("#nav-tab-SecurityUsers-UserGroups > div > a")).Click();
-			System.Threading.Thread.Sleep(3000);
+			Sleep(3);
 
 			if (needsVerifyRoleExists)
 			{
@@ -390,7 +392,7 @@ namespace IrisUserAutoProcessor
 				else
 				{
 					//User has this role
-					_logger.WriteLine("Role was assigned before");
+					WriteLog("Role was assigned before");
 					return true;
 				}
 			}
@@ -416,7 +418,7 @@ namespace IrisUserAutoProcessor
 					}
 				}
 				if (roleToAdd == null)
-					_logger.WriteLine(roleToAdd.Text + " : this role already exists.");
+					WriteLog(roleToAdd.Text + " : this role already exists.");
 
 				IWebElement assignedList = driver.FindElement(By.Id("item-assigned-list"));
 
@@ -425,20 +427,17 @@ namespace IrisUserAutoProcessor
 				   .Release(assignedList)
 				   .Build()
 				   .Perform();
-				System.Threading.Thread.Sleep(1000);
+				Sleep(1);
 
 				driver.FindElement(By.Id("btn-header-Save-7117")).Click();
-				System.Threading.Thread.Sleep(3000);
+				Sleep(3);
 
-				//Error message pops up.
-				if (driver.FindElement(By.Id("custom-modal-window")) != null)
-				{
-					_logger.WriteLine("WARNING: possbile role conflicts identfied, it is blocking role granting process,please maintain roles manually.");
-				}
-				_logger.WriteLine(ticket.RoleName + " : was added to user.");
+				WriteLog(ticket.RoleName + " : has been added to user.");
+
 			}
 			catch (Exception ex)
 			{
+				return false;
 			}
 
 			return true;
@@ -485,19 +484,18 @@ namespace IrisUserAutoProcessor
 				   .Release(unAssignedList)
 				   .Build()
 				   .Perform();
-				System.Threading.Thread.Sleep(1000);
+				Sleep(1);
 
 				driver.FindElement(By.Id("btn-header-Save-7117")).Click();
-				System.Threading.Thread.Sleep(5000);
+				Sleep(10);//sometimes performance is not good
+
+				WriteLog(ticket.RoleName + " : role has been removed due to conflicts with latest role.");
 
 				//Error message pops up.
 				if (driver.FindElement(By.Id("custom-modal-window")) != null)
 				{
-					_logger.WriteLine("WARNING: possbile error occured when removing role");
-				}
-
-				_logger.WriteLine(ticket.RoleName + " : role was removed.");
-				_logger.Flush();
+					WriteLog("WARNING: possbile error occured when removing role");
+				}	
 
 			}
 			catch (Exception ex)
@@ -512,21 +510,29 @@ namespace IrisUserAutoProcessor
 			GoToUrlWithWait(ticket.TicketUrl, 2);
 
 			IWebElement assignedToTextBox = driver.FindElement(By.Id("sys_display.sc_task.assigned_to"));
-			System.Threading.Thread.Sleep(1000);
+			Sleep(1);
 			assignedToTextBox.Click();
 			assignedToTextBox.SendKeys(ConfigurationManager.AppSettings["AdminUserEmail"] + Keys.Tab);
 
 			SelectElement caseStatusSelect = new SelectElement(driver.FindElement(By.Id("sc_task.state")));
-			System.Threading.Thread.Sleep(1000);
+			Sleep(1);
 			caseStatusSelect.SelectByText("Closed Complete");
 
 			IWebElement saveButton = driver.FindElement(By.Id("sysverb_update_and_stay"));
-			System.Threading.Thread.Sleep(1000);
+			Sleep(1);
 			saveButton.Click();
-			System.Threading.Thread.Sleep(3000);
+			Sleep(3);
 
-			_logger.WriteLine(ticket.TicketNumber + " has been completed in SNOW.");
+			WriteLog(ticket.TicketNumber + " has been completed in SNOW.");			
+		}
+
+		private void WriteLog(string msg) {
+			_logger.WriteLine(msg);
 			_logger.Flush();
+		}
+
+		private void Sleep(int seconds) {
+			Thread.Sleep(seconds * 1000);
 		}
 		#endregion
 

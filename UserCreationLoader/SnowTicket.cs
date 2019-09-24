@@ -26,4 +26,11 @@ namespace IrisUserAutoProcessor
 		public string TicketUrl { get; }
 
 	}
+
+	public enum UserStatus {
+		ACTIVE = 0,
+		INACTIVE =1,
+		LOCKEDTEMPLY=2,
+		ISSUED=3
+	}
 }
