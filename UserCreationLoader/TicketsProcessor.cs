@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
+using System.Xml;
+using System.Xml.Linq;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Interactions;
@@ -19,9 +21,9 @@ namespace IrisUserAutoProcessor
 		private static readonly Dictionary<string, string> AppDict = new Dictionary<string, string>(5);
 		private static readonly Dictionary<string, string> RoleMappingDict = new Dictionary<string, string>();
 		private static readonly Dictionary<string, string> RolesConflictsDict = new Dictionary<string, string>();
-		private static readonly TextWriter _logger = File.CreateText(".//logs/" + DateTime.Now.ToString("yyyyMMddhhmmss") + ".txt");
+		private static readonly TextWriter Logger = File.CreateText(".//logs/" + DateTime.Now.ToString("yyyyMMddhhmmss") + ".txt");
 		private static readonly string BaseURL = ConfigurationManager.AppSettings["ServiceNowHomePageUrl"];
-		private Dictionary<string, string> UserNameIdDict = new Dictionary<string, string>();
+		private static Dictionary<string, string> UserCacheDict = new Dictionary<string, string>();
 		#endregion
 
 		static TicketsProcessor()
@@ -31,6 +33,8 @@ namespace IrisUserAutoProcessor
 			InitRoleMappingDictionary();
 
 			InitRoleConflictsDictionary();
+
+			InitUserCacheDictionary();
 		}
 
 		#region Initiate Settings
@@ -69,8 +73,14 @@ namespace IrisUserAutoProcessor
 					string[] items = lines[i].Split(',');
 					RolesConflictsDict.Add(items[0], items[1]);
 				}
-
 			}
+		}
+
+		private static void InitUserCacheDictionary()
+		{
+			var xml = XElement.Parse(File.ReadAllText("UserNamesIdCache.xml"));
+
+			xml.Elements("user").ToList().ForEach(user => UserCacheDict.Add(user.Element("name").Value, user.Element("id").Value));
 		}
 		#endregion
 
@@ -84,85 +94,104 @@ namespace IrisUserAutoProcessor
 		
 		public void ProcessIrisUserTickets(string UserRequestPageUrl)
 		{
-			using (TextReader reader = File.OpenText("UserRequestTicketsList.txt"))
-			{
-				string taskListContent = reader.ReadToEnd();
-				string[] lines = taskListContent.Split(Environment.NewLine.ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
-				foreach (string taskNO in lines)
-				{
-					bool done = ProcessSingleTicket(UserRequestPageUrl, taskNO);
-				}
-			}
-		}
-
-		public void TearDownBrowser()
-		{
-			driver.Quit();
-		}
-
-
-		#endregion
-
-		#region Private Methods
-		private bool ProcessSingleTicket(string ticketsPoolUrl, string ticketNumber)
-		{
 			try
 			{
-				//Open tickets pool page
-				GoToUrlWithWait(ticketsPoolUrl, 5);
+				while (true)
+				{
+					string ticketNumber = string.Empty;
+					string ticketUrl = string.Empty;
 
-				//Open ticket page
-				string ticketRelativeUrl = GetTicketUrl(ticketNumber);
-				GoToUrlWithWait(BaseURL + ticketRelativeUrl, 3);
+					//Open tickets pool page
+					GoToUrlWithWait(UserRequestPageUrl, 5);
 
-				string hub, roleName, searchUserUrl, userName;
-				GetUserRequestDetails(out hub, out roleName, out searchUserUrl, out userName);
+					ticketUrl = FetchOneTicketUrl(out ticketNumber);
 
-				string userID = GetUserID(searchUserUrl, userName);
+					if (string.IsNullOrWhiteSpace(ticketUrl) || string.IsNullOrWhiteSpace(ticketNumber))
+						break;
 
-				if (!VerifyUserID(userID, userName)) {
-					WriteLog(string.Format("Found UserID '{0}' does NOT match with the given UserName '{1}'.", userID, userName));
-					return false;
+					//Open ticket page
+					GoToUrlWithWait(BaseURL + ticketUrl, 3);
+
+					string hub, roleName, searchUserUrl, userName;
+					GetUserRequestDetails(out hub, out roleName, out searchUserUrl, out userName);
+
+					string userID = GetUserID(searchUserUrl, userName);
+
+					if (!VerifyUserID(userID, userName))
+					{
+						WriteLog(string.Format("Found UserID '{0}' does NOT match with the given UserName '{1}'.", userID, userName));
+					}
+					//Log user's details
+					SnowTicket ticket = new SnowTicket(ticketNumber, hub, RoleMappingDict[roleName], userID, BaseURL + ticketUrl);
+
+					LogTicketDetails(ticket);
+
+					//Login to IRIS
+					GoToIrisUserModule(ticket);
+
+					//Search the user by userID in IRIS
+					string userNameValue = LoadUserDetails(userID);
+
+					bool _isSuccess = false;
+					if (String.IsNullOrWhiteSpace(userNameValue))
+						_isSuccess = CreateNewUserInIRIS(ticket);
+					else _isSuccess = UpdateUser(ticket);
+
+					//Close SNOW case
+					if (_isSuccess) CompleteUserRequestTask(ticket);
 				}
-				//Log user's details
-				SnowTicket ticket = new SnowTicket(ticketNumber, hub, RoleMappingDict[roleName], userID, BaseURL + ticketRelativeUrl);
-
-				LogTicketDetails(ticket);
-
-				//Login to IRIS
-				GoToIrisUserModule(ticket);
-
-				//Search the user by userID in IRIS
-				string userNameValue = LoadUserDetails(userID);
-
-				bool _isSuccess = false;
-				if (String.IsNullOrWhiteSpace(userNameValue))
-					_isSuccess = CreateNewUserInIRIS(ticket);
-				else _isSuccess = UpdateUser(ticket);
-
-				//Close SNOW case
-				if (_isSuccess) CompleteUserRequestTask(ticket);
-
-				return _isSuccess;
 			}
 			catch (Exception ex)
 			{
 				WriteLog(ex.InnerException.Message);
-				return false;
+				throw ex;
 			}
+			finally {
+				//save user names and IDs in Dictionary to file on the disk.
+				SaveUserCacheDictToXmlFile();				
+			}
+		}
+
+		public void CloseBrowser()
+		{
+			driver.Quit();			
+		}
+
+		#endregion
+
+		#region Private Methods
+		private void SaveUserCacheDictToXmlFile()
+		{
+			XElement root = new XElement("root");
+			foreach (var kv in UserCacheDict) {				
+				root.Add(new XElement("user", new XElement("name", kv.Key), new XElement("id", kv.Value)));
+			}
+			using (XmlWriter xmlWriter = XmlWriter.Create("UserNamesIdCache.xml")) {
+				root.WriteTo(xmlWriter);
+			}			
 		}
 
 		private bool VerifyUserID(string userID, string userName)
 		{
-			return userName.TrimEnd().ToLowerInvariant().Split(' ').Any(u => userID.Contains(u.ToLowerInvariant()));
+			return userName.TrimEnd().ToLowerInvariant().Split(' ').Any(u => userID.ToLowerInvariant().Contains(u));
 		}
 
 		private string GetUserID(string searchUserUrl, string userName)
 		{
+			//Check if user name has a ID in cache
+			if (UserCacheDict.ContainsKey(userName))
+				return UserCacheDict[userName];
+
 			//Search the user
 			GoToUrlWithWait(searchUserUrl, 3);
 
-			return GetUserIdBySearchingInSnow();
+			string userID = GetUserIdBySearchingInSnow();
+
+			//Save found userid to cache
+			if (!UserCacheDict.ContainsKey(userID))
+				UserCacheDict.Add(userName, userID);
+
+			return userID;
 		}
 
 		private string LoadUserDetails(string userID)
@@ -194,6 +223,33 @@ namespace IrisUserAutoProcessor
 				 System.Web.HttpUtility.UrlEncode(userName));
 		}
 
+		private string FetchOneTicketUrl(out string ticketNumber)
+		{
+			//Switch iframe
+			IWebElement gsftMainFrame = driver.FindElement(By.Id("gsft_main"));
+			driver.SwitchTo().Frame(gsftMainFrame);
+
+			string ticketUrl =string.Empty;
+			ticketNumber = string.Empty;
+			int rowIndex = 1;
+			int ticketsToLookupMaxiumCount = int.Parse(ConfigurationManager.AppSettings["TicketsToLookupMaxiumCount"]);
+			
+			// get the first ticket of this page, if not found, try others.
+			while (rowIndex <= ticketsToLookupMaxiumCount)
+			{				
+				IWebElement firstTicketEle = driver.FindElement(By.XPath(string.Format(@"//div[@id='task']/table[2]/tbody/tr[{0}]/td[3]/span/a", rowIndex ++))); 
+				ticketNumber = firstTicketEle.Text.TrimStart().TrimEnd();
+
+				if (ticketNumber.StartsWith("TASK"))
+				{
+					ticketUrl = firstTicketEle != null ? firstTicketEle.GetAttribute("ng-href") : string.Empty;
+					break;
+				}
+			}
+			return ticketUrl;
+
+		}
+
 		private string GetTicketUrl(string ticketNum)
 		{
 			//Switch iframe
@@ -201,12 +257,9 @@ namespace IrisUserAutoProcessor
 			driver.SwitchTo().Frame(gsftMainFrame);
 
 			//Get the Url of ticket
-			IWebElement taskLink = driver.FindElement(By.XPath(String.Format("//a[contains(.,'{0}')]",
-				ticketNum)));
+			IWebElement taskLink = driver.FindElement(By.XPath(String.Format("//a[contains(.,'{0}')]", ticketNum)));
 
-			return taskLink != null ?
-				taskLink.GetAttribute("ng-href")
-				: string.Empty; ;
+			return taskLink != null ?  taskLink.GetAttribute("ng-href") : string.Empty;
 		}
 
 		private string GetUserIdBySearchingInSnow()
@@ -216,7 +269,7 @@ namespace IrisUserAutoProcessor
 			driver.SwitchTo().Frame(useriFrame);
 
 			var userEmailEle = driver.FindElement(By.XPath(@"//section[@id='people-places_users']/section[1]/div/div[2]/address/ul/li[1]"));
-			Sleep(2);
+			Sleep(4);
 
 			return StringHelper.GetFirstMatch(userEmailEle.Text, StringHelper.PATTERN_USERID);
 		}
@@ -229,7 +282,6 @@ namespace IrisUserAutoProcessor
 			IWebElement passwordInput = driver.FindElement(By.Id("txtPassword"));
 			userNameInput.SendKeys(ConfigurationManager.AppSettings["AdminUserName"]);
 			passwordInput.SendKeys(ConfigurationManager.AppSettings["AdminUserPassword"]);
-
 
 			IWebElement loginButton = driver.FindElement(By.Id("btnSubmit"));
 			driver.Manage().Timeouts().PageLoad = TimeSpan.FromSeconds(120);
@@ -245,11 +297,11 @@ namespace IrisUserAutoProcessor
 
 		private static void LogTicketDetails(SnowTicket ticket)
 		{
-			_logger.WriteLine("--------------------------------------------");
-			_logger.WriteLine(ticket.TicketNumber);
-			_logger.WriteLine(ticket.TicketUrl);
-			_logger.WriteLine(String.Join(",", ticket.Hub, ticket.RoleName, ticket.UserId));
-			_logger.Flush();
+			Logger.WriteLine("--------------------------------------------");
+			Logger.WriteLine(ticket.TicketNumber);
+			Logger.WriteLine(ticket.TicketUrl);
+			Logger.WriteLine(String.Join(",", ticket.Hub, ticket.RoleName, ticket.UserId));
+			Logger.Flush();
 		}
 
 		private void GoToUrlWithWait(string url, int seconds)
@@ -265,8 +317,8 @@ namespace IrisUserAutoProcessor
 			UserStatus userStatus = GetCurrentUserStatus();
 
 			isSuccess = ActivateUser(ticket, userStatus);
-			if (!isSuccess)
-				return false;
+
+			if (!isSuccess) return false;
 
 			isSuccess = VerifyAndAssignRoleToUser(ticket, true);
 
@@ -305,6 +357,7 @@ namespace IrisUserAutoProcessor
 
 					Actions action = new Actions(driver);
 					action.SendKeys(Keys.ArrowUp).Build().Perform();
+
 					//Move 2 steps up to select ACTIVE status
 					if (userStatus == UserStatus.LOCKEDTEMPLY)
 					{
@@ -335,7 +388,7 @@ namespace IrisUserAutoProcessor
 			{
 				IWebElement newUserButton = driver.FindElement(By.Id("btn-header-New-7065"));
 				newUserButton.Click();
-				Sleep(2);
+				Sleep(1);
 
 				IWebElement userIdTextBox = driver.FindElement(By.Id("Username-7065"));
 				Sleep(1);
@@ -347,13 +400,16 @@ namespace IrisUserAutoProcessor
 
 				IWebElement userDescTextBox = driver.FindElement(By.Id("Description-7065"));
 				Sleep(1);
-				userDescTextBox.SendKeys(" " + ticket.TicketNumber);
+				userDescTextBox.SendKeys(">" + ticket.TicketNumber);
 
 				IWebElement saveUserButton = driver.FindElement(By.Id("btn-header-Save-7065"));
 				saveUserButton.Click();
 
 				WriteLog("User has been ADDED in IRIS.");
-				Sleep(5);
+				Sleep(3);
+
+				int retryTimes = int.Parse(ConfigurationManager.AppSettings["DismissModalDialgoRetryTimes"]);
+				DismissModalDiaglosIfExists(retryTimes);
 
 				//Assign role to new user
 				VerifyAndAssignRoleToUser(ticket, false);
@@ -363,6 +419,24 @@ namespace IrisUserAutoProcessor
 			catch (Exception ex)
 			{
 				return false;
+			}
+		}
+
+		private void DismissModalDiaglosIfExists(int retryCount)
+		{
+			while (retryCount-- > 0)
+			{
+				try
+				{
+					driver.SwitchTo().ActiveElement();
+
+					driver.FindElement(By.XPath("//button[contains(@id,'btn-modal-Cancel-')]")).Click();
+
+					Sleep(1);
+
+				}
+				catch (NoAlertPresentException) { }
+				catch (Exception) { }
 			}
 		}
 
@@ -527,8 +601,8 @@ namespace IrisUserAutoProcessor
 		}
 
 		private void WriteLog(string msg) {
-			_logger.WriteLine(msg);
-			_logger.Flush();
+			Logger.WriteLine(DateTime.Now.ToString("dd-MM-yyyy hh:mm:ss : ") + msg);
+			Logger.Flush();
 		}
 
 		private void Sleep(int seconds) {
@@ -550,10 +624,10 @@ namespace IrisUserAutoProcessor
 
 				// TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
 				// TODO: set large fields to null.
-				if (_logger != null)
+				if (Logger != null)
 				{
-					_logger.Flush();
-					_logger.Dispose();
+					Logger.Flush();
+					Logger.Dispose();
 				}
 				if(driver !=null)
 					driver.Quit();

@@ -22,7 +22,7 @@ namespace IrisUserAutoProcessor
 
 			ticketsProcessor.ProcessIrisUserTickets(ConfigurationManager.AppSettings["UserRequestPoolsUrl"]);			
 
-			ticketsProcessor.TearDownBrowser();
+			ticketsProcessor.CloseBrowser();
 
 			Console.WriteLine("All Done!");
 			Console.ReadKey();
